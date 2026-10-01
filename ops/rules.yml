@@ -4,7 +4,7 @@ groups:
     rules:
       # Nothing else matters if this fires: the books do not balance.
       - alert: TrialBalanceNotZero
-        expr: abs(ledger_trial_balance_residual_minor_units) > 0
+        expr: abs(ledger_trial_balance_residual) > 0
         for: 1m
         labels:
           severity: critical

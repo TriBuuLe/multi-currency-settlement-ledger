@@ -56,7 +56,10 @@ echo "The customer is paid the 1.10 they were quoted. The difference is the hous
 post "/api/v1/authorizations/$AUTH_ID/settlement" '{}' | pretty
 
 step "6. Convert JPY -> KWD, composed through USD. Watch roundingResidual."
-post /api/v1/payments/conversions "{\"customerId\":\"$CUSTOMER\",\"sellCurrency\":\"JPY\",\"buyCurrency\":\"KWD\",\"sellAmountMinor\":123457,\"reference\":\"demo-triangulated\"}" | pretty
+echo "100,004 JPY is chosen on purpose: rounding the USD pivot leg to cents makes the"
+echo "two-leg result differ from the exact cross rate by 2 KWD minor units, and that"
+echo "difference is posted to EQUITY:FX_ROUNDING:KWD rather than quietly dropped."
+post /api/v1/payments/conversions "{\"customerId\":\"$CUSTOMER\",\"sellCurrency\":\"JPY\",\"buyCurrency\":\"KWD\",\"sellAmountMinor\":100004,\"reference\":\"demo-triangulated\"}" | pretty
 
 step "7. Reconcile against a statement containing one of every kind of break"
 STATEMENT="external_ref,posted_at,currency,amount_minor,direction,description

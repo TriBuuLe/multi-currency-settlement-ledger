@@ -1,5 +1,5 @@
 # Scrapes the ledger's metrics. The one series worth alerting on is
-# ledger_trial_balance_residual_minor_units: it must be zero for every currency.
+# ledger_trial_balance_residual: it must be zero for every currency.
 # If it is not, the books do not add up and no other signal matters.
 global:
   scrape_interval: 10s

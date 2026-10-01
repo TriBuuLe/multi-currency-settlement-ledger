@@ -54,8 +54,10 @@ public class LedgerMetrics {
         this.reconciliation = reconciliation;
         this.authorizations = authorizations;
         this.trialBalanceResidual = MultiGauge.builder("ledger.trial_balance.residual")
-                .description("Signed sum of all balances in a currency; must always be zero")
-                .baseUnit("minor units")
+                // No baseUnit: Micrometer would append it to the exported name, and a
+                // metric somebody has to alert on should be named exactly what the
+                // runbook and the alert rules say it is.
+                .description("Signed sum of all balances in a currency, in minor units; must always be zero")
                 .register(registry);
         registry.gauge("ledger.reconciliation.open_breaks", openBreaks);
         registry.gauge("ledger.authorizations.open", openAuthorizations);
