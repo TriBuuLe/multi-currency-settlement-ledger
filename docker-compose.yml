@@ -1,0 +1,62 @@
+# Everything needed to run the ledger and look at its metrics:
+#   make up      start Postgres, the service, and Prometheus
+#   make demo    walk a funded wallet through authorization, settlement, and reconciliation
+#   make verify  ask the ledger to prove its own books
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ledger
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger
+      # The ledger's correctness does not depend on these, but its throughput does.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      # Deferred constraint triggers run at commit; keeping statement logging off
+      # for fast statements avoids drowning the log during load tests.
+      - -c
+      - log_min_duration_statement=250
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledger -d ledger"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ledger:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/ledger
+      DB_USER: ledger
+      DB_PASSWORD: ledger
+      DB_POOL_SIZE: "16"
+      LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"
+
+  prometheus:
+    image: prom/prometheus:latest
+    depends_on:
+      - ledger
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/rules.yml:/etc/prometheus/rules.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+
+volumes:
+  postgres-data:

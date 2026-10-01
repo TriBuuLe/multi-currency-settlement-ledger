@@ -1,0 +1,101 @@
+spring:
+  application:
+    name: settlement-ledger
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ledger}
+    username: ${DB_USER:ledger}
+    password: ${DB_PASSWORD:ledger}
+    hikari:
+      # Sized for a CPU-bound Postgres rather than for optimism: past the point
+      # where the database can run queries in parallel, more connections only add
+      # contention and lock-wait time. See docs/DESIGN.md section 9.
+      maximum-pool-size: ${DB_POOL_SIZE:16}
+      minimum-idle: 4
+      connection-timeout: 3000
+      pool-name: ledger-pool
+
+  jpa:
+    # There is no JPA here. The ledger is written in explicit SQL: an append-only
+    # journal with database-side constraint triggers is a poor fit for an ORM that
+    # wants to manage entity state, and the interesting parts of this schema
+    # (deferred constraints, multi-row RETURNING inserts, bitemporal lookups) are
+    # clearer written out than configured.
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+  threads:
+    virtual:
+      enabled: true
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: ${PORT:8080}
+  error:
+    include-message: always
+  shutdown: graceful
+
+ledger:
+  # The currency every pair can be composed through when it is not quoted directly.
+  pivot-currency: USD
+  # The currency exposure and P&L are aggregated into.
+  reporting-currency: USD
+  # How long a quote is held before its funds are released automatically.
+  authorization-ttl: PT48H
+
+  risk:
+    var-lookback-days: 60
+    var-confidence: 0.95
+
+  recon:
+    # A bank value date this far from ours is a timing difference, not a break.
+    timing-tolerance: PT48H
+    # How far back to look for ledger movements the statement has not reported.
+    ledger-window: PT168H
+
+  idempotency:
+    # A claim in flight longer than this is assumed to belong to a dead process.
+    stale-after: PT2M
+    reap-interval-ms: 60000
+
+  verification:
+    interval-ms: 300000
+    initial-delay-ms: 15000
+
+  metrics:
+    refresh-ms: 30000
+    initial-delay-ms: 10000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: settlement-ledger
+
+springdoc:
+  swagger-ui:
+    path: /docs
+    operations-sorter: method
+  api-docs:
+    path: /openapi
+
+logging:
+  level:
+    com.tribule.ledger: ${LOG_LEVEL:INFO}
+    org.flywaydb: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msg%n"

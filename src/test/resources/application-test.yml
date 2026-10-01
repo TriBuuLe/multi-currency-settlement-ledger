@@ -1,0 +1,35 @@
+# Test profile overlay.
+#
+# A profile, not a replacement. A file called application.yml on the test classpath
+# would shadow the main one outright, and the tests would then be exercising default
+# values rather than the configuration that actually ships.
+#
+# Every background job is pushed far into the future rather than left on its
+# default schedule. A test that fails because the expiry sweeper quietly released
+# the authorization it was about to settle is a test that teaches you nothing, so
+# the jobs are driven explicitly by the tests that care about them.
+ledger:
+  authorization:
+    expiry-interval-ms: 86400000
+    expiry-initial-delay-ms: 86400000
+  idempotency:
+    reap-interval-ms: 86400000
+    reap-initial-delay-ms: 86400000
+    stale-after: PT0S
+  verification:
+    interval-ms: 86400000
+    initial-delay-ms: 86400000
+  metrics:
+    refresh-ms: 86400000
+    initial-delay-ms: 86400000
+
+spring:
+  flyway:
+    clean-disabled: false
+
+logging:
+  level:
+    com.tribule.ledger: INFO
+    org.testcontainers: WARN
+    com.github.dockerjava: WARN
+    org.springframework.jdbc.core: INFO

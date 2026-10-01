@@ -1,0 +1,23 @@
+target/
+*.class
+*.jar
+*.war
+
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+.DS_Store
+*.log
+*.swp
+
+# k6 and benchmark output
+load/results/
+
+# jqwik's record of previously failing samples; machine-local
+.jqwik-database

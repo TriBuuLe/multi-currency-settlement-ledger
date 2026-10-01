@@ -1,0 +1,49 @@
+# Alerts, in the order you would want to be woken for them.
+groups:
+  - name: ledger-correctness
+    rules:
+      # Nothing else matters if this fires: the books do not balance.
+      - alert: TrialBalanceNotZero
+        expr: abs(ledger_trial_balance_residual_minor_units) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Trial balance for {{ $labels.currency }} is not zero"
+          description: >-
+            The signed sum of every balance in {{ $labels.currency }} is {{ $value }}
+            minor units. Money has been created or destroyed. Stop writes and run
+            POST /api/v1/admin/verify.
+
+      - alert: VerificationFailing
+        expr: ledger_verification_healthy == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ledger self-verification is failing"
+          description: "Check the findings from POST /api/v1/admin/verify."
+
+  - name: ledger-operations
+    rules:
+      - alert: ReconciliationBreaksGrowing
+        expr: increase(ledger_reconciliation_open_breaks[6h]) > 0
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unexplained differences against the bank are accumulating"
+          description: >-
+            Open breaks are only created where the matcher could not decide what is
+            true. They do not resolve themselves.
+
+      - alert: ContentionCostingRetries
+        expr: rate(ledger_retry_attempts_total[5m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Hot-account contention is causing sustained retries"
+          description: >-
+            Transactions are losing concurrency races often enough to matter. Look for
+            a single account taking most of the write traffic.
