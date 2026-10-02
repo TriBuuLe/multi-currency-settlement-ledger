@@ -39,6 +39,115 @@ path can route around it.
 
 ---
 
+## Architecture
+
+```mermaid
+flowchart TB
+    client(["API client"])
+    bank[["Bank statement CSV"]]
+
+    subgraph app["Spring Boot service"]
+        direction TB
+        web["web/<br/>REST controllers · RFC 9457 errors"]
+        idem["idempotency/<br/>claim key → run → store response"]
+        jobs{{"scheduled jobs<br/>verify · expire authorizations · reap claims"}}
+
+        subgraph domain["domain services"]
+            direction LR
+            payments["payments/<br/>funding · payout<br/>transfer · conversion"]
+            settlement["settlement/<br/>authorize · settle<br/>release · replay"]
+            risk["risk/<br/>exposure · VaR"]
+            recon["recon/<br/>statement matching"]
+            verify["verify/<br/>six self-checks"]
+        end
+
+        subgraph core["core"]
+            direction LR
+            fx["fx/<br/>bitemporal rates"]
+            ledger["ledger/<br/>the only writer of<br/>journal + balances"]
+            money["money/<br/>exact minor-unit math"]
+        end
+    end
+
+    subgraph pg["PostgreSQL 17 — invariants enforced here"]
+        direction LR
+        journal[("journal + balances<br/><i>append-only · balanced per<br/>currency · no overdraft</i>")]
+        rates[("fx_rate<br/><i>append-only, two timestamps</i>")]
+        state[("authorizations · idempotency<br/>statements · breaks")]
+    end
+
+    prom[("Prometheus")]
+
+    client -->|"writes need Idempotency-Key"| web
+    bank --> web
+    web --> idem
+    web --> recon & risk & verify
+    idem --> payments & settlement
+    jobs -.-> verify & settlement
+
+    risk -->|"reuses settlement math"| settlement
+    payments & settlement & recon & verify --> ledger
+    payments & settlement & risk --> fx
+    fx & ledger --> money
+
+    ledger ==> journal
+    fx ==> rates
+    domain ==> state
+    app -.->|"/actuator/prometheus"| prom
+```
+
+**Reading it top to bottom.** Every write that moves money (payments, authorizations, reversals)
+passes through `idempotency/` first: the key is claimed with an `INSERT` (so two concurrent
+retries cannot both win), the domain service runs, and the response is stored for replay. Domain services never write tables directly for money
+movements — they build postings and hand them to `ledger/`, which is the only writer of
+`journal_entry` and the balance projection. `fx/` supplies rates, `money/` does all the arithmetic,
+and neither touches balances.
+
+**The bottom layer is the safety net.** Conservation of money, append-only history, currency
+matching and overdraft protection are enforced by triggers and constraints in PostgreSQL itself
+([V1–V8](src/main/resources/db/migration/)), so the arrows into the database are the only path
+that matters. A code path added later that skips `ledger/` still cannot write an unbalanced
+transaction.
+
+**The loop closes on itself.** `risk/` reuses the settlement conversion so unrealized exposure
+becomes realized P&L exactly at settlement; `verify/` recomputes everything from the journal on a
+schedule and exports the result as metrics; `recon/` compares the journal against the bank's view.
+
+### Life of an FX authorization
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant I as idempotency
+    participant S as settlement
+    participant F as fx
+    participant L as ledger
+    participant DB as PostgreSQL
+
+    C->>I: POST /authorizations (Idempotency-Key)
+    I->>DB: INSERT claim, reserve txn id
+    I->>S: authorize
+    S->>F: resolve(pair, now, knownAt = now)
+    S->>L: wallet → hold, contingent commitment
+    L->>DB: journal entries + balance upsert
+    DB-->>L: COMMIT checks: balanced per currency, no overdraft
+    I->>DB: store response
+    I-->>C: quoted rate, authorization id
+
+    Note over C,DB: …time passes, the rate moves…
+
+    C->>I: POST /authorizations/{id}/settlement
+    I->>S: settle
+    S->>DB: UPDATE authorization WHERE version = n (only one settler wins)
+    S->>F: resolve(pair, settledAt, knownAt = settledAt)
+    S->>L: hold → FX position → customer, difference → FX_REALIZED_PNL
+    L->>DB: journal entries (EUR block and USD block each balance)
+    I-->>C: settled, realized P&L
+```
+
+---
+
 ## The invariants, and where each one is enforced
 
 Everything in this table is enforced by PostgreSQL. The application checks several of them
