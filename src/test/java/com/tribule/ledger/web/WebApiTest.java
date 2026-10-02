@@ -38,6 +38,18 @@ class WebApiTest extends AbstractLedgerTest {
     @Autowired private io.swagger.v3.oas.models.OpenAPI openApi;
 
     @Test
+    @DisplayName("the visual walkthrough is served at /demo")
+    void demoPageIsServed() throws Exception {
+        mvc.perform(get("/demo"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", "/demo.html"));
+        mvc.perform(get("/demo.html"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.containsString("<title>Ledger Demo</title>")));
+    }
+
+    @Test
     @DisplayName("a mutating request without an idempotency key is refused, with an explanation")
     void idempotencyKeyIsRequired() throws Exception {
         mvc.perform(post("/api/v1/payments/funding")

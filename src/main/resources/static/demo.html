@@ -1,0 +1,1065 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger Demo</title>
+<!--
+  A visual walkthrough of the ledger, driven by the real API on this server.
+  Nothing here is simulated: every account card, journal entry and balance on the
+  screen is what the service returned. Same sequence as scripts/demo.sh.
+-->
+<style>
+:root {
+  --bg: #f6f6f3;
+  --panel: #ffffff;
+  --ink: #1c1d1f;
+  --muted: #6b6f76;
+  --line: #e2e2dc;
+  --soft: #f0f0ec;
+  --debit: #2563eb;
+  --debit-soft: #e6eefe;
+  --credit: #c2620a;
+  --credit-soft: #fdf0e1;
+  --ok: #15803d;
+  --ok-soft: #e3f4e8;
+  --warn: #b45309;
+  --warn-soft: #fdf3dc;
+  --bad: #b91c1c;
+  --bad-soft: #fde6e6;
+  --accent: #4338ca;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --speed: 1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131416;
+    --panel: #1c1d20;
+    --ink: #ececec;
+    --muted: #9a9ea6;
+    --line: #2e3035;
+    --soft: #24262a;
+    --debit: #7aa2ff;
+    --debit-soft: #1d2a45;
+    --credit: #f0a35a;
+    --credit-soft: #3a2a19;
+    --ok: #4ade80;
+    --ok-soft: #173322;
+    --warn: #fbbf24;
+    --warn-soft: #3a2f12;
+    --bad: #f87171;
+    --bad-soft: #3d1a1a;
+    --accent: #a5b4fc;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 var(--sans);
+}
+.mono { font-family: var(--mono); }
+.muted { color: var(--muted); }
+
+/* ---------- header ---------- */
+header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+header h1 { font-size: 16px; margin: 0; letter-spacing: -0.01em; }
+header .sub { font-size: 12px; color: var(--muted); }
+.tb { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tb-label { font-size: 12px; color: var(--muted); margin-right: 4px; }
+.chip {
+  font: 12px var(--mono);
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  white-space: nowrap;
+}
+.chip.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.chip.pulse { animation: pulse calc(700ms * var(--speed)) ease-out; }
+@keyframes pulse { 0% { transform: scale(1); } 40% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+/* ---------- layout ---------- */
+main {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  gap: 20px;
+  padding: 20px;
+  align-items: start;
+}
+main > section { min-width: 0; }
+@media (max-width: 960px) {
+  main { grid-template-columns: 1fr; padding: 16px; }
+  .board-wrap { position: static !important; }
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+/* ---------- script (steps) ---------- */
+.controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px; border-bottom: 1px solid var(--line); }
+button {
+  font: 13px var(--sans);
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); color: var(--panel); border-color: transparent; font-weight: 600; }
+.speed { margin-left: auto; display: flex; gap: 4px; align-items: center; font-size: 12px; color: var(--muted); }
+.speed button { padding: 4px 8px; font-size: 12px; }
+.speed button[aria-pressed="true"] { background: var(--soft); border-color: var(--muted); color: var(--ink); }
+
+ol.steps { list-style: none; margin: 0; padding: 6px; }
+ol.steps li {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+ol.steps li .n {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center;
+  font: 600 11px var(--mono);
+  border: 1px solid var(--line);
+}
+ol.steps li b { display: block; color: inherit; font-weight: 600; }
+ol.steps li small { font-size: 12px; }
+ol.steps li.active { background: var(--soft); color: var(--ink); }
+ol.steps li.active .n { background: var(--accent); color: var(--panel); border-color: transparent; }
+ol.steps li.done { color: var(--ink); }
+ol.steps li.done .n { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+ol.steps li.failed .n { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+
+.story { padding: 16px 18px; border-top: 1px solid var(--line); }
+.story h2 { font-size: 18px; margin: 0 0 6px; letter-spacing: -0.01em; }
+.story p { margin: 0 0 10px; }
+.story .watch {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--soft);
+  border-radius: 0 6px 6px 0;
+}
+.error {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: 13px;
+}
+
+/* ---------- detail panels ---------- */
+.detail { padding: 0 18px 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.detail:empty { display: none; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.card h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 13px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: var(--mono); text-align: right; }
+.big { font: 600 22px var(--mono); }
+.pos { color: var(--ok); }
+.neg { color: var(--bad); }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td.num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+td.dr { color: var(--debit); }
+td.cr { color: var(--credit); }
+tr.sum td { font-weight: 600; border-bottom: none; }
+.badge {
+  display: inline-block;
+  font: 600 10px var(--mono);
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.badge.ok { background: var(--ok-soft); color: var(--ok); }
+.badge.auto { background: var(--debit-soft); color: var(--debit); }
+.badge.open { background: var(--warn-soft); color: var(--warn); }
+.badge.wait { background: var(--soft); color: var(--muted); }
+.reveal { animation: reveal calc(400ms * var(--speed)) ease-out both; }
+@keyframes reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.route { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font: 13px var(--mono); margin-bottom: 10px; }
+.route .node { padding: 4px 8px; border-radius: 6px; background: var(--soft); border: 1px solid var(--line); }
+.route .arrow { color: var(--muted); font-size: 11px; }
+.checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 13px; }
+.checks li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; }
+.checks .tick { color: var(--ok); font-weight: 700; }
+.checks .cross { color: var(--bad); font-weight: 700; }
+.tries { display: grid; gap: 8px; }
+.tries button { text-align: left; }
+.result { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--soft); }
+.result code { font-family: var(--mono); font-size: 12px; }
+
+/* ---------- board ---------- */
+.board-wrap { position: sticky; top: 76px; }
+.board {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr minmax(200px, 1.1fr) 1fr;
+  grid-template-areas:
+    "bank hub cust"
+    "house house off";
+  gap: 14px;
+  padding: 14px;
+  min-height: 520px;
+}
+@media (max-width: 700px) {
+  .board {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "hub hub" "bank cust" "house house" "off off";
+  }
+}
+.zone { min-width: 0; border: 1px dashed var(--line); border-radius: 10px; padding: 10px; min-height: 120px; }
+.zone > h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+.zone > h4 span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.zone .cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.zone.house .cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.z-bank { grid-area: bank; }
+.z-cust { grid-area: cust; }
+.z-house { grid-area: house; }
+.z-off { grid-area: off; }
+.zone .empty { font-size: 12px; color: var(--muted); }
+
+.acct {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: box-shadow calc(300ms * var(--speed)), border-color calc(300ms * var(--speed));
+  animation: reveal calc(400ms * var(--speed)) ease-out both;
+}
+.acct .top { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
+.acct .name { font-weight: 600; font-size: 12px; }
+.acct .ccy { font: 600 10px var(--mono); color: var(--muted); }
+.acct .bal { font: 600 16px var(--mono); margin-top: 2px; }
+.acct .code { font: 10px var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct .delta { font: 600 11px var(--mono); min-height: 15px; }
+.acct.hit-dr { border-color: var(--debit); box-shadow: 0 0 0 3px var(--debit-soft); }
+.acct.hit-cr { border-color: var(--credit); box-shadow: 0 0 0 3px var(--credit-soft); }
+
+.hub {
+  grid-area: hub;
+  align-self: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--soft);
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hub .label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+.hub .kind { font: 600 14px var(--mono); }
+.hub .desc { font-size: 12px; color: var(--muted); }
+.hub .totals { display: grid; gap: 4px; }
+.hub .tot {
+  display: grid;
+  grid-template-columns: 36px 1fr 1fr 18px;
+  gap: 6px;
+  font: 11px var(--mono);
+  align-items: center;
+}
+.hub .tot .d { color: var(--debit); text-align: right; }
+.hub .tot .c { color: var(--credit); text-align: right; }
+.hub .tot .ok { color: var(--ok); font-weight: 700; }
+.hub .note { font-size: 12px; color: var(--muted); }
+.legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); padding: 0 14px 12px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+.coins { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.coin {
+  position: absolute;
+  left: 0; top: 0;
+  font: 600 11px var(--mono);
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  will-change: transform;
+}
+.coin.dr { background: var(--debit); color: #fff; }
+.coin.cr { background: var(--credit); color: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .acct, .chip.pulse { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Settlement Ledger, live</h1>
+    <div class="sub">Every number here comes from the running service. Run <span class="mono" id="run-id">–</span></div>
+  </div>
+  <div class="tb" aria-live="polite">
+    <span class="tb-label">Trial balance (must be 0 in every currency)</span>
+    <span id="tb-chips"><span class="chip">loading…</span></span>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="controls">
+      <button class="primary" id="btn-next">Start</button>
+      <button id="btn-auto">Play all</button>
+      <button id="btn-reset">Start over</button>
+      <div class="speed" role="group" aria-label="Animation speed">
+        speed
+        <button data-speed="1.6" aria-pressed="false">slow</button>
+        <button data-speed="1" aria-pressed="true">normal</button>
+        <button data-speed="0.45" aria-pressed="false">fast</button>
+      </div>
+    </div>
+    <ol class="steps" id="steps"></ol>
+    <div class="story" id="story" aria-live="polite"></div>
+    <div class="detail" id="detail"></div>
+  </section>
+
+  <section class="board-wrap">
+    <div class="panel">
+      <div class="board" id="board">
+        <div class="zone z-bank"><h4>Bank <span>· assets</span></h4><div class="cards" data-zone="bank"></div></div>
+        <div class="hub" id="hub">
+          <div class="label">Journal</div>
+          <div class="note">Each transaction appears here, then its entries fly to the accounts they post to.</div>
+        </div>
+        <div class="zone z-cust"><h4>Customer <span>· what the house owes</span></h4><div class="cards" data-zone="cust"></div></div>
+        <div class="zone z-house house"><h4>House <span>· equity: FX position, P&amp;L, rounding</span></h4><div class="cards" data-zone="house"></div></div>
+        <div class="zone z-off"><h4>Off balance sheet <span>· promises, not cash</span></h4><div class="cards" data-zone="off"></div></div>
+        <div class="coins" id="coins"></div>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--debit)"></i>Debit (Dr)</span>
+        <span><i style="background:var(--credit)"></i>Credit (Cr)</span>
+        <span>Balances are shown the way each account normally reads: a wallet with money in it is positive.</span>
+        <span>Bank and house accounts are shared, so they include earlier runs.</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  // ------------------------------------------------------------------ helpers
+
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const el = (tag, attrs = {}, ...kids) => {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "class") node.className = v;
+      else if (k === "html") node.innerHTML = v;
+      else node.setAttribute(k, v);
+    }
+    for (const kid of kids.flat()) {
+      if (kid == null) continue;
+      node.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+    }
+    return node;
+  };
+  const speed = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--speed")) || 1;
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const sleep = ms => new Promise(r => setTimeout(r, reducedMotion ? 0 : ms * speed()));
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
+    : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === "x" ? r : (r & 3 | 8)).toString(16);
+      }));
+  const iso = ms => new Date(ms).toISOString();
+
+  // Minor units -> display. The scale is learned from what the server formats,
+  // with the common ones known up front.
+  const scales = { EUR: 2, USD: 2, JPY: 0, KWD: 3, GBP: 2, BHD: 3 };
+  function learnScale(money) {
+    if (!money || !money.amount || !money.currency) return;
+    const num = String(money.amount).split(" ")[0];
+    const dot = num.indexOf(".");
+    scales[money.currency] = dot < 0 ? 0 : num.length - dot - 1;
+  }
+  function fmt(minor, ccy, { sign = false } = {}) {
+    const scale = scales[ccy] ?? 2;
+    const value = Number(minor) / 10 ** scale;
+    const s = Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: scale, maximumFractionDigits: scale });
+    const prefix = value < 0 ? "−" : (sign && value > 0 ? "+" : "");
+    return prefix + s;
+  }
+  const money = (m, opts) => m ? `${fmt(m.amountMinor, m.currency, opts)} ${m.currency}` : "–";
+
+  class ApiError extends Error {
+    constructor(status, body) {
+      super((body && (body.detail || body.title)) || `HTTP ${status}`);
+      this.status = status;
+      this.body = body;
+    }
+  }
+
+  async function api(method, path, body, { key, allowError = false } = {}) {
+    const headers = { "Accept": "application/json" };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (key) headers["Idempotency-Key"] = key;
+    const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const text = await res.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch { json = { detail: text }; }
+    if (!res.ok && !allowError) throw new ApiError(res.status, json);
+    return { status: res.status, headers: res.headers, json };
+  }
+  const post = (path, body, opts = {}) => api("POST", path, body, { key: uuid(), ...opts });
+  const get = path => api("GET", path);
+  const enc = encodeURIComponent;
+
+  // ------------------------------------------------------------------ accounts
+
+  // Account codes look like TYPE:NAME[:customer]:CCY (see ChartOfAccounts).
+  function describe(code) {
+    const p = code.split(":");
+    const ccy = p[p.length - 1];
+    const key = p[0] + ":" + p[1];
+    const known = {
+      "ASSET:NOSTRO": ["Bank account", "bank"],
+      "ASSET:SUSPENSE": ["Suspense (unidentified)", "bank"],
+      "LIABILITY:CUSTOMER": ["Customer wallet", "cust"],
+      "LIABILITY:CUSTOMER_HOLD": ["Held for a quote", "cust"],
+      "EQUITY:FX_POSITION": ["FX position", "house"],
+      "EQUITY:FX_REALIZED_PNL": ["Realized FX P&L", "house"],
+      "EQUITY:FX_ROUNDING": ["FX rounding", "house"],
+      "CONTINGENT:FX_COMMITMENT": ["FX commitment", "off"],
+      "CONTINGENT:FX_COMMITMENT_CONTRA": ["Commitment contra", "off"],
+    }[key];
+    const zone = known ? known[1]
+      : p[0] === "ASSET" ? "bank" : p[0] === "LIABILITY" ? "cust" : p[0] === "CONTINGENT" ? "off" : "house";
+    return { label: known ? known[0] : p.slice(1, -1).join(" "), zone, ccy };
+  }
+  // Debit-normal accounts read debit-minus-credit; credit-normal ones the reverse.
+  function normalFactor(code) {
+    if (code.startsWith("ASSET:") || code.startsWith("CONTINGENT:FX_COMMITMENT:")) return 1;
+    return -1;
+  }
+
+  const cards = new Map(); // code -> { node, value }
+
+  function cardFor(code, initialNormal) {
+    if (cards.has(code)) return cards.get(code);
+    const d = describe(code);
+    const node = el("div", { class: "acct", "data-code": code },
+      el("div", { class: "top" }, el("span", { class: "name" }, d.label), el("span", { class: "ccy" }, d.ccy)),
+      el("div", { class: "bal" }, fmt(initialNormal, d.ccy)),
+      el("div", { class: "delta" }),
+      el("div", { class: "code", title: code }, code));
+    const zone = $(`[data-zone="${d.zone}"]`);
+    zone.append(node);
+    const card = { node, value: initialNormal, ccy: d.ccy };
+    cards.set(code, card);
+    return card;
+  }
+
+  function tweenBalance(card, to, delta, side) {
+    const from = card.value;
+    card.value = to;
+    const balNode = $(".bal", card.node);
+    const deltaNode = $(".delta", card.node);
+    deltaNode.textContent = `${side === "DEBIT" ? "Dr" : "Cr"} ${fmt(delta, card.ccy, { sign: true })}`;
+    deltaNode.style.color = delta >= 0 ? "var(--ok)" : "var(--bad)";
+    card.node.classList.remove("hit-dr", "hit-cr");
+    void card.node.offsetWidth;
+    card.node.classList.add(side === "DEBIT" ? "hit-dr" : "hit-cr");
+    const duration = reducedMotion ? 0 : 600 * speed();
+    const start = performance.now();
+    const step = now => {
+      const t = duration === 0 ? 1 : Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      balNode.textContent = fmt(Math.round(from + (to - from) * eased), card.ccy);
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+    setTimeout(() => card.node.classList.remove("hit-dr", "hit-cr"), 1400 * speed());
+  }
+
+  // ------------------------------------------------------------------ journal animation
+
+  const hub = $("#hub");
+  const board = $("#board");
+  const coins = $("#coins");
+
+  function hubIdle(note) {
+    hub.replaceChildren(el("div", { class: "label" }, "Journal"), el("div", { class: "note" }, note));
+  }
+
+  // Posts one transaction onto the board: show it in the hub, fly each entry to
+  // its account, and land each account on the balance the server reports.
+  async function animateTransaction(tx) {
+    const entries = tx.entries || [];
+    const codes = [...new Set(entries.map(e => e.accountCode))];
+    const after = new Map(await Promise.all(codes.map(async code => {
+      const { json } = await get(`/api/v1/accounts/${enc(code)}/balance`);
+      learnScale({ amount: json.balance && json.balance.replace(/^-/, ""), currency: json.currency });
+      return [code, json];
+    })));
+
+    // The balance before this transaction, so a first-seen card starts from where
+    // the account really was rather than from zero.
+    for (const code of codes) {
+      const signedDelta = entries.filter(e => e.accountCode === code)
+        .reduce((s, e) => s + (e.direction === "DEBIT" ? e.amountMinor : -e.amountMinor), 0);
+      const factor = normalFactor(code);
+      const afterNormal = after.get(code).normalBalanceMinor;
+      if (!cards.has(code)) cardFor(code, afterNormal - factor * signedDelta);
+    }
+
+    // Only this transaction's changes are labelled on the cards.
+    document.querySelectorAll(".acct .delta").forEach(n => { n.textContent = ""; });
+
+    const currencies = [...new Set(entries.map(e => e.currency))];
+    const totals = Object.fromEntries(currencies.map(c => [c, { dr: 0, cr: 0, drN: null, crN: null, okN: null }]));
+    const totalsBox = el("div", { class: "totals" });
+    for (const c of currencies) {
+      const row = el("div", { class: "tot" },
+        el("span", {}, c), el("span", { class: "d" }, "Dr 0"), el("span", { class: "c" }, "Cr 0"), el("span", { class: "ok" }, ""));
+      totals[c].drN = row.children[1];
+      totals[c].crN = row.children[2];
+      totals[c].okN = row.children[3];
+      totalsBox.append(row);
+    }
+    hub.replaceChildren(
+      el("div", { class: "label" }, "Journal · transaction"),
+      el("div", { class: "kind" }, tx.kind),
+      el("div", { class: "desc" }, tx.description || tx.reference || ""),
+      totalsBox);
+    await sleep(500);
+
+    const boardRect = board.getBoundingClientRect();
+    const hubRect = hub.getBoundingClientRect();
+    const origin = { x: hubRect.left + hubRect.width / 2 - boardRect.left, y: hubRect.top + hubRect.height / 2 - boardRect.top };
+
+    const flights = entries.map((entry, i) => (async () => {
+      await sleep(i * 220);
+      const card = cards.get(entry.accountCode);
+      const target = card.node.getBoundingClientRect();
+      const dest = { x: target.left + target.width / 2 - boardRect.left, y: target.top + target.height / 2 - boardRect.top };
+      const isDr = entry.direction === "DEBIT";
+      const coin = el("div", { class: "coin " + (isDr ? "dr" : "cr") },
+        `${isDr ? "Dr" : "Cr"} ${fmt(entry.amountMinor, entry.currency)} ${entry.currency}`);
+      coins.append(coin);
+      const w = coin.offsetWidth, h = coin.offsetHeight;
+      const t = totals[entry.currency];
+      if (isDr) t.dr += entry.amountMinor; else t.cr += entry.amountMinor;
+      t.drN.textContent = "Dr " + fmt(t.dr, entry.currency);
+      t.crN.textContent = "Cr " + fmt(t.cr, entry.currency);
+      const duration = reducedMotion ? 1 : 750 * speed();
+      const anim = coin.animate([
+        { transform: `translate(${origin.x - w / 2}px, ${origin.y - h / 2}px) scale(.6)`, opacity: 0 },
+        { transform: `translate(${origin.x - w / 2}px, ${origin.y - h / 2}px) scale(1)`, opacity: 1, offset: .15 },
+        { transform: `translate(${dest.x - w / 2}px, ${dest.y - h / 2}px) scale(1)`, opacity: 1, offset: .9 },
+        { transform: `translate(${dest.x - w / 2}px, ${dest.y - h / 2}px) scale(.7)`, opacity: 0 },
+      ], { duration, easing: "cubic-bezier(.4,0,.2,1)" });
+      await anim.finished.catch(() => {});
+      coin.remove();
+      const signed = isDr ? entry.amountMinor : -entry.amountMinor;
+      const delta = normalFactor(entry.accountCode) * signed;
+      // Land each entry on its share of the change; the last entry for an
+      // account lands exactly on the server's figure.
+      const remaining = entries.slice(i + 1).some(e => e.accountCode === entry.accountCode);
+      const target2 = remaining ? card.value + delta : after.get(entry.accountCode).normalBalanceMinor;
+      tweenBalance(card, target2, delta, entry.direction);
+    })());
+    await Promise.all(flights);
+
+    for (const c of currencies) {
+      const t = totals[c];
+      t.okN.textContent = t.dr === t.cr ? "✓" : "✗";
+      t.okN.style.color = t.dr === t.cr ? "var(--ok)" : "var(--bad)";
+    }
+    await sleep(700); // let the last balance finish counting
+  }
+
+  // ------------------------------------------------------------------ trial balance
+
+  async function refreshTrialBalance() {
+    const box = $("#tb-chips");
+    try {
+      const { json } = await get("/api/v1/trial-balance");
+      box.replaceChildren(...json.map(row => el("span", {
+        class: "chip pulse " + (row.residualMinor === 0 ? "ok" : "bad"),
+        title: `Dr ${row.debitBalancesMinor} / Cr ${row.creditBalancesMinor} minor units across ${row.accountCount} accounts`,
+      }, `${row.currency} ${row.residualMinor === 0 ? "0 ✓" : row.residualMinor}`)));
+    } catch (e) {
+      box.replaceChildren(el("span", { class: "chip bad" }, "service unreachable"));
+    }
+  }
+
+  // ------------------------------------------------------------------ detail panels
+
+  const detail = $("#detail");
+  const story = $("#story");
+
+  function journalTable(tx) {
+    const rows = tx.entries.map(e => el("tr", {},
+      el("td", {}, describe(e.accountCode).label, el("div", { class: "muted mono", style: "font-size:10px" }, e.accountCode)),
+      el("td", { class: "num" }, e.currency),
+      el("td", { class: "num dr" }, e.direction === "DEBIT" ? fmt(e.amountMinor, e.currency) : ""),
+      el("td", { class: "num cr" }, e.direction === "CREDIT" ? fmt(e.amountMinor, e.currency) : "")));
+    const sums = {};
+    for (const e of tx.entries) {
+      sums[e.currency] ??= { dr: 0, cr: 0 };
+      sums[e.currency][e.direction === "DEBIT" ? "dr" : "cr"] += e.amountMinor;
+    }
+    const sumRows = Object.entries(sums).map(([c, s]) => el("tr", { class: "sum" },
+      el("td", {}, `${c} total ${s.dr === s.cr ? "✓ balances" : "✗"}`),
+      el("td", { class: "num" }, c),
+      el("td", { class: "num dr" }, fmt(s.dr, c)),
+      el("td", { class: "num cr" }, fmt(s.cr, c))));
+    return el("div", { class: "card reveal" },
+      el("h3", {}, `Journal entries · ${tx.kind}`),
+      el("div", { class: "table-scroll" },
+        el("table", {},
+          el("thead", {}, el("tr", {}, el("th", {}, "Account"), el("th", {}, ""), el("th", { style: "text-align:right" }, "Dr"), el("th", { style: "text-align:right" }, "Cr"))),
+          el("tbody", {}, rows, sumRows))));
+  }
+
+  function kvCard(title, pairs, extra) {
+    return el("div", { class: "card reveal" }, el("h3", {}, title),
+      el("dl", { class: "kv" }, pairs.flatMap(([k, v, cls]) => [el("dt", {}, k), el("dd", cls ? { class: cls } : {}, v)])),
+      extra || null);
+  }
+
+  // ------------------------------------------------------------------ the scenes
+
+  let run;
+  function newRun() {
+    const id = Date.now().toString(36);
+    // Every timestamp in a run is pinned relative to one base, so rates, the
+    // quote and the settlement line up regardless of earlier runs' data.
+    const base = Date.now() - 5 * 60 * 1000;
+    run = { id, base, customer: `ui-${id}`, tx: {} };
+    $("#run-id").textContent = run.customer;
+  }
+  const at = seconds => iso(run.base + seconds * 1000);
+
+  const scenes = [
+    {
+      title: "The market opens",
+      short: "Publish exchange rates",
+      watch: "Nothing lands on the board. A price is information, not money.",
+      body: "The service learns three exchange rates. Each one records when it was true in the market and when we learned it, so a later correction can never rewrite what we knew at the time.",
+      async run() {
+        const pub = (b, q, rate) => post("/api/v1/fx/rates",
+          { baseCurrency: b, quoteCurrency: q, rate, effectiveAt: at(0), observedAt: at(0), source: "demo-ui" });
+        await pub("EUR", "USD", "1.10");
+        await pub("JPY", "USD", "0.0063572");
+        await pub("USD", "KWD", "0.30712");
+        hubIdle("No journal entries. Rates are stored separately, append-only.");
+        detail.replaceChildren(kvCard("Rates published", [
+          ["EUR → USD", "1.10"],
+          ["JPY → USD", "0.0063572"],
+          ["USD → KWD", "0.30712"],
+          ["JPY → KWD", "not quoted, composed through USD later"],
+        ]));
+      },
+    },
+    {
+      title: "The customer deposits money",
+      short: "Four deposits arrive at the bank",
+      watch: "Each deposit makes two entries that move together: the bank account goes up and so does what the house owes the customer. Debits always equal credits.",
+      body: "Money lands in the house's bank account (an asset), and the house now owes it to the customer (a liability). Three EUR deposits and one JPY deposit, each with its own bank reference.",
+      async run() {
+        const deposits = [
+          ["eur", "EUR", 100000], ["eur2", "EUR", 25000], ["eur3", "EUR", 7500], ["jpy", "JPY", 1000000],
+        ];
+        for (const [tag, currency, amountMinor] of deposits) {
+          const { json } = await post("/api/v1/payments/funding", {
+            customerId: run.customer, currency, amountMinor,
+            reference: `${run.id}-fund-${tag}`, occurredAt: at(5),
+          });
+          learnScale(json.amount);
+          run.tx[tag] = json.transaction;
+          await animateTransaction(json.transaction);
+        }
+        detail.replaceChildren(journalTable(run.tx.eur));
+      },
+    },
+    {
+      title: "Quote and hold",
+      short: "Authorize EUR → USD at 1.10",
+      watch: "The euros move from the wallet into a hold. The USD promise goes off balance sheet, because no dollars have moved yet.",
+      body: "The customer wants to swap 1,000 EUR for USD, paid later. We quote 1.10 now and lock in their euros so they can't spend them twice.",
+      async run() {
+        const { json } = await post("/api/v1/authorizations", {
+          reference: `${run.id}-auth`, customerId: run.customer,
+          sellCurrency: "EUR", buyCurrency: "USD", sellAmountMinor: 100000,
+          authorizedAt: at(10), ttlSeconds: 30 * 24 * 3600,
+        });
+        run.auth = json.authorization;
+        learnScale(json.authorization.selling); learnScale(json.authorization.quoted);
+        await animateTransaction(json.holdTransaction);
+        detail.replaceChildren(
+          kvCard("The quote", [
+            ["Customer sells", money(run.auth.selling)],
+            ["Customer will receive", money(run.auth.quoted)],
+            ["Quoted rate", String(run.auth.quotedRate)],
+            ["Status", run.auth.status],
+          ]),
+          journalTable(json.holdTransaction));
+      },
+    },
+    {
+      title: "The market moves",
+      short: "EUR → USD goes to 1.15",
+      watch: "Still nothing posts. Exposure is an estimate of what settling now would make, computed with the same code settlement uses.",
+      body: "Before we settle, the euro strengthens to 1.15. We promised 1.10, so the euros we hold are now worth more than the dollars we owe. The risk report marks the open quote to market.",
+      async run() {
+        await post("/api/v1/fx/rates",
+          { baseCurrency: "EUR", quoteCurrency: "USD", rate: "1.15", effectiveAt: at(20), observedAt: at(20), source: "demo-ui" });
+        const { json } = await get("/api/v1/risk/exposure");
+        const pos = (json.positions || []).find(p => p.pair && p.pair.includes("EUR") && p.pair.includes("USD"));
+        hubIdle("No journal entries. Exposure is a report, not a posting.");
+        const pairs = [["EUR → USD rate", "1.10 → 1.15"]];
+        if (pos) {
+          learnScale(pos.unrealizedPnl);
+          pairs.push(
+            ["Open quotes on this pair", String(pos.authorizationCount)],
+            ["Owed to customers", money(pos.quoted)],
+            ["Euros held, at today's rate", money(pos.markedToMarket)],
+            ["Unrealized P&L", money(pos.unrealizedPnl, { sign: true }), pos.unrealizedPnl.amountMinor >= 0 ? "pos" : "neg"]);
+        } else {
+          pairs.push(["Open quotes", String(json.openAuthorizations)]);
+        }
+        const note = pos && pos.authorizationCount > 1
+          ? el("p", { class: "muted", style: "font-size:12px;margin:8px 0 0" }, "Includes open quotes left by earlier runs.")
+          : null;
+        detail.replaceChildren(kvCard("Settlement risk right now", pairs, note));
+      },
+    },
+    {
+      title: "Settle",
+      short: "Deliver USD, book the rate move",
+      watch: "The customer gets exactly the 1,100.00 USD they were promised. The 50.00 USD the rate move earned lands in its own P&L account, not in anyone's wallet.",
+      body: "We settle at the market rate of 1.15. Each currency balances on its own: the euro entries net to zero, and so do the dollar entries.",
+      async run() {
+        const key = uuid();
+        const body = { settledAt: at(30) };
+        const { json } = await post(`/api/v1/authorizations/${run.auth.id}/settlement`, body, { key });
+        run.settle = { key, body, txId: json.settlementTransaction.id };
+        [json.delivered, json.marketValue, json.realizedPnl].forEach(learnScale);
+        await animateTransaction(json.settlementTransaction);
+        detail.replaceChildren(
+          kvCard("Settlement", [
+            ["Customer receives", money(json.delivered)],
+            ["Market value at 1.15", money(json.marketValue)],
+            ["Realized FX P&L", money(json.realizedPnl, { sign: true }), json.realizedPnl.amountMinor >= 0 ? "pos" : "neg"],
+          ], json.explanation ? el("p", { class: "muted", style: "font-size:12px;margin:8px 0 0" }, json.explanation) : null),
+          journalTable(json.settlementTransaction));
+      },
+    },
+    {
+      title: "Convert through a pivot",
+      short: "JPY → KWD, via USD",
+      watch: "Look for the FX rounding card. Rounding the USD leg to whole cents leaves a couple of fils over, and they get their own account instead of vanishing.",
+      body: "Nobody quotes JPY → KWD directly, so the service converts JPY → USD → KWD. The USD in the middle has to be rounded to a real amount of cents before the second leg.",
+      async run() {
+        const { json } = await post("/api/v1/payments/conversions", {
+          customerId: run.customer, sellCurrency: "JPY", buyCurrency: "KWD",
+          sellAmountMinor: 100004, reference: `${run.id}-convert`,
+        });
+        [json.sold, json.bought, json.roundingResidual].forEach(learnScale);
+        await animateTransaction(json.transaction);
+        const r = json.rate || {};
+        const route = el("div", { class: "route" },
+          el("span", { class: "node" }, "JPY"),
+          el("span", { class: "arrow" }, `× ${r.firstLegRate ?? "?"} →`),
+          el("span", { class: "node" }, r.pivotCurrency || "USD"),
+          el("span", { class: "arrow" }, `× ${r.secondLegRate ?? "?"} →`),
+          el("span", { class: "node" }, "KWD"));
+        detail.replaceChildren(
+          kvCard("Triangulated conversion", [
+            ["Sold", money(json.sold)],
+            ["Customer receives", money(json.bought)],
+            ["Rounding residual", money(json.roundingResidual)],
+            ["How the rate was found", r.resolution || "–"],
+          ], null),
+          journalTable(json.transaction));
+        detail.firstChild.insertBefore(route, detail.firstChild.children[1]);
+      },
+    },
+    {
+      title: "Reconcile with the bank",
+      short: "Every difference gets a name",
+      watch: "Three kinds of difference are resolved automatically. Two are left open for a person on purpose, because closing them would mean guessing.",
+      body: "The bank sends its own statement. It's never exactly in step with our books, so instead of forcing the numbers to agree, the service explains each difference.",
+      async run() {
+        const t = at(5);
+        const late = iso(run.base + 5000 - 3 * 24 * 3600 * 1000);
+        const lines = [
+          { ref: `${run.id}-fund-eur`, at: t, ccy: "EUR", amt: 100000, why: "matches our books" },
+          { ref: `${run.id}-fund-eur`, at: t, ccy: "EUR", amt: 100000, why: "the bank sent this one twice" },
+          { ref: `${run.id}-unknown`, at: t, ccy: "EUR", amt: 4200, why: "money we never booked" },
+          { ref: `${run.id}-fund-jpy`, at: t, ccy: "JPY", amt: 999999, why: "amount disagrees by ¥1" },
+          { ref: `${run.id}-fund-eur3`, at: late, ccy: "EUR", amt: 7500, why: "bank's date is 3 days off" },
+        ];
+        const csv = ["external_ref,posted_at,currency,amount_minor,direction,description",
+          ...lines.map(l => `${l.ref},${l.at},${l.ccy},${l.amt},DEBIT,${l.why}`)].join("\n");
+
+        const badgeCells = lines.map(() => el("td", {}, el("span", { class: "badge wait" }, "…")));
+        const missingRow = el("tr", { style: "display:none" },
+          el("td", { class: "mono" }, `${run.id}-fund-eur2`),
+          el("td", { class: "num" }, `${fmt(25000, "EUR")} EUR`),
+          el("td", { class: "muted" }, "in our books, not on the statement"),
+          el("td", {}, el("span", { class: "badge wait" }, "…")));
+        const table = el("table", {},
+          el("thead", {}, el("tr", {}, el("th", {}, "Bank reference"), el("th", { style: "text-align:right" }, "Amount"), el("th", {}, "What's going on"), el("th", {}, "Verdict"))),
+          el("tbody", {}, lines.map((l, i) => el("tr", {},
+            el("td", { class: "mono" }, l.ref),
+            el("td", { class: "num" }, `${fmt(l.amt, l.ccy)} ${l.ccy}`),
+            el("td", { class: "muted" }, l.why),
+            badgeCells[i])), missingRow));
+        const summary = el("div");
+        detail.replaceChildren(el("div", { class: "card reveal" }, el("h3", {}, "Bank statement vs. our books"),
+          el("div", { class: "table-scroll" }, table), summary));
+        hubIdle("Reading the bank statement…");
+        await sleep(900);
+
+        const { json: batch } = await api("POST", "/api/v1/reconciliation/statements",
+          { source: "demo-ui", filename: `${run.id}.csv`, asOfDate: iso(Date.now()).slice(0, 10), csv });
+        const { json: report } = await api("POST", `/api/v1/reconciliation/statements/${batch.id}/reconcile`);
+        const { json: breaks } = await get(`/api/v1/reconciliation/statements/${batch.id}/breaks`);
+
+        const byTx = (type, txId) => breaks.find(b => b.breakType === type && b.transactionId === txId);
+        const verdict = (b, fallback) => {
+          if (!b) return el("span", { class: "badge ok" }, fallback || "MATCHED");
+          const open = b.status === "OPEN";
+          return el("span", { class: "badge " + (open ? "open" : "auto"), title: b.resolution || "" },
+            `${b.breakType} · ${open ? "needs a person" : "auto"}`);
+        };
+        const found = [
+          byTx("AMOUNT_MISMATCH", run.tx.eur.id) || byTx("TIMING_DIFFERENCE", run.tx.eur.id),
+          breaks.find(b => b.breakType === "DUPLICATE_IN_STATEMENT"),
+          breaks.find(b => b.breakType === "MISSING_IN_LEDGER"),
+          byTx("AMOUNT_MISMATCH", run.tx.jpy.id),
+          byTx("TIMING_DIFFERENCE", run.tx.eur3.id),
+        ];
+        for (let i = 0; i < lines.length; i++) {
+          badgeCells[i].replaceChildren(verdict(found[i]));
+          badgeCells[i].firstChild.classList.add("reveal");
+          await sleep(450);
+        }
+        missingRow.style.display = "";
+        missingRow.lastChild.replaceChildren(verdict(byTx("MISSING_IN_STATEMENT", run.tx.eur2.id), "not flagged"));
+        missingRow.lastChild.firstChild.classList.add("reveal");
+
+        const ours = new Set(Object.values(run.tx).map(tx => tx.id));
+        const older = breaks.filter(b => b.breakType === "MISSING_IN_STATEMENT" && !ours.has(b.transactionId)).length;
+        summary.replaceChildren(el("p", { class: "muted", style: "font-size:12px;margin:10px 0 0" },
+          `${report.statementLines} statement lines · ${report.matched} matched · ${report.autoResolved} auto-resolved · ${report.open} open.`,
+          older ? ` ${older} of the open items are older deposits from earlier runs that this statement didn't mention either.` : ""));
+
+        // The one break that changes the books: unexplained money goes to suspense.
+        const missing = found[2];
+        if (missing && missing.adjustmentTransactionId) {
+          const { json: adj } = await get(`/api/v1/transactions/${missing.adjustmentTransactionId}`);
+          await animateTransaction(adj);
+          detail.append(journalTable(adj));
+        } else {
+          hubIdle("Reconciliation finished.");
+        }
+      },
+    },
+    {
+      title: "Prove the books",
+      short: "Six independent checks",
+      watch: "Every check passes, and the trial balance at the top still reads 0 in every currency.",
+      body: "The database already refuses unbalanced writes, but \"can't happen\" is a hypothesis. The verifier recomputes everything from the raw journal and compares it with what's stored.",
+      async run() {
+        hubIdle("Recomputing every balance from the journal…");
+        const { json } = await api("POST", "/api/v1/admin/verify", undefined, { allowError: true });
+        const checks = [
+          "Stored balances sum to zero in every currency",
+          "The raw journal sums to zero in every currency",
+          "Every account's stored balance matches a replay of its entries",
+          "Every single transaction balances per currency",
+          "No account that forbids a negative balance has one",
+          "Open quotes agree with the money held for them",
+        ];
+        const findings = json.findings || [];
+        detail.replaceChildren(
+          el("div", { class: "card reveal" },
+            el("h3", {}, json.healthy ? "Healthy" : "Problems found"),
+            el("ul", { class: "checks" }, checks.map(c => el("li", {},
+              el("span", { class: json.healthy ? "tick" : "muted" }, json.healthy ? "✓" : "•"), el("span", {}, c)))),
+            findings.length ? el("ul", { class: "checks", style: "margin-top:10px" }, findings.map(f =>
+              el("li", {}, el("span", { class: "cross" }, "✗"), el("span", {}, `${f.check}: ${f.detail}`)))) : null,
+            el("p", { class: "muted", style: "font-size:12px;margin:10px 0 0" },
+              `${json.transactions} transactions and ${json.entries} entries checked in ${json.durationMillis} ms.`)),
+          tryToBreakIt());
+        hubIdle(json.healthy ? "Books verified. Now try to break them." : "The verifier found problems; see the list on the left.");
+      },
+    },
+  ];
+
+  // ------------------------------------------------------------------ try to break it
+
+  function tryToBreakIt() {
+    const out = el("div", { class: "result", hidden: "" });
+    const show = (...kids) => { out.hidden = false; out.replaceChildren(...kids); refreshTrialBalance(); };
+    const wrap = async (btn, fn) => {
+      btn.disabled = true;
+      try { await fn(); } catch (e) { show(`Unexpected: ${e.message}`); }
+      btn.disabled = false;
+    };
+
+    const retry = el("button", {}, "Retry the settlement, as a client would after a timeout");
+    retry.onclick = () => wrap(retry, async () => {
+      const r = await api("POST", `/api/v1/authorizations/${run.auth.id}/settlement`, run.settle.body,
+        { key: run.settle.key, allowError: true });
+      const sameTx = r.json && r.json.settlementTransaction && r.json.settlementTransaction.id === run.settle.txId;
+      show(el("b", {}, `HTTP ${r.status}`), ` · Idempotent-Replay: ${r.headers.get("Idempotent-Replay") || "absent"}. `,
+        sameTx ? "Same transaction id as before: the stored response was replayed and nothing was posted twice."
+          : `Response: ${(r.json && (r.json.detail || r.json.title)) || "?"}`);
+    });
+
+    const reuse = el("button", {}, "Reuse that key with a different request");
+    reuse.onclick = () => wrap(reuse, async () => {
+      const r = await api("POST", `/api/v1/authorizations/${run.auth.id}/settlement`, { settledAt: at(31) },
+        { key: run.settle.key, allowError: true });
+      show(el("b", {}, `HTTP ${r.status}`), " · ", (r.json && (r.json.detail || r.json.title)) || "",
+        ". Answering a different request with the first one's result is how a $10 transfer gets reported as a $10,000 one, so it's refused.");
+    });
+
+    const overdraw = el("button", {}, "Pay out more EUR than the wallet holds");
+    overdraw.onclick = () => wrap(overdraw, async () => {
+      const code = `LIABILITY:CUSTOMER:${run.customer}:EUR`;
+      const { json: bal } = await get(`/api/v1/accounts/${enc(code)}/balance`);
+      const amount = bal.normalBalanceMinor + 1;
+      const r = await post("/api/v1/payments/payouts",
+        { customerId: run.customer, currency: "EUR", amountMinor: amount, reference: `${run.id}-overdraw` }, { allowError: true });
+      show(el("b", {}, `HTTP ${r.status}`), ` · tried ${fmt(amount, "EUR")} EUR against a wallet of ${fmt(bal.normalBalanceMinor, "EUR")} EUR. `,
+        (r.json && (r.json.detail || r.json.title)) || "",
+        r.status === 409 ? ". The database refused it at commit, so no other request could have raced past the check." : "");
+    });
+
+    return el("div", { class: "card reveal" }, el("h3", {}, "Try to break it"),
+      el("div", { class: "tries" }, retry, reuse, overdraw, out));
+  }
+
+  // ------------------------------------------------------------------ driver
+
+  const stepsList = $("#steps");
+  const btnNext = $("#btn-next");
+  const btnAuto = $("#btn-auto");
+  const btnReset = $("#btn-reset");
+  let current = -1;
+  let busy = false;
+  let auto = false;
+
+  function renderSteps() {
+    stepsList.replaceChildren(...scenes.map((s, i) => el("li", {
+      class: i < current ? "done" : i === current ? (s.failed ? "failed" : "active") : "",
+    }, el("span", { class: "n" }, i + 1), el("span", {}, el("b", {}, s.title), el("small", {}, s.short)))));
+    btnNext.textContent = current < 0 ? "Start" : current >= scenes.length - 1 ? "Finished" : "Next step";
+    btnNext.disabled = busy || current >= scenes.length - 1;
+    btnAuto.disabled = busy || current >= scenes.length - 1;
+    btnAuto.textContent = auto ? "Playing…" : "Play all";
+    btnReset.disabled = busy;
+  }
+
+  function intro() {
+    story.replaceChildren(
+      el("h2", {}, "Watch a currency trade go through the ledger"),
+      el("p", {}, "Eight steps: a customer deposits money, locks in an exchange rate, the market moves, and we settle. Then the bank's statement is checked against our books, and the ledger proves it still adds up."),
+      el("p", { class: "watch" }, "Press Start, or Play all to run straight through. Watch the trial balance at the top: it stays at 0 the whole time."));
+    detail.replaceChildren();
+  }
+
+  async function advance() {
+    if (busy || current >= scenes.length - 1) return false;
+    busy = true;
+    current++;
+    const scene = scenes[current];
+    scene.failed = false;
+    renderSteps();
+    story.replaceChildren(el("h2", {}, `${current + 1}. ${scene.title}`), el("p", {}, scene.body), el("p", { class: "watch" }, scene.watch));
+    // On a narrow screen the board sits below the steps; bring it into view.
+    if (matchMedia("(max-width: 960px)").matches) {
+      $(".board-wrap").scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+    }
+    let ok = true;
+    try {
+      await scene.run();
+    } catch (e) {
+      ok = false;
+      scene.failed = true;
+      current--;
+      story.append(el("div", { class: "error" },
+        `The service said: ${e.message}${e.status ? ` (HTTP ${e.status})` : ""}. Is it running? Try "Start over".`));
+    }
+    await refreshTrialBalance();
+    busy = false;
+    renderSteps();
+    return ok;
+  }
+
+  btnNext.onclick = () => advance();
+  btnAuto.onclick = async () => {
+    auto = true;
+    renderSteps();
+    while (current < scenes.length - 1) {
+      if (!(await advance())) break;
+      await sleep(2200);
+    }
+    auto = false;
+    renderSteps();
+  };
+  btnReset.onclick = () => {
+    if (busy) return;
+    current = -1;
+    scenes.forEach(s => s.failed = false);
+    cards.clear();
+    document.querySelectorAll(".zone .cards").forEach(z => z.replaceChildren());
+    hubIdle("Each transaction appears here, then its entries fly to the accounts they post to.");
+    newRun();
+    intro();
+    renderSteps();
+    refreshTrialBalance();
+  };
+  document.querySelectorAll(".speed button").forEach(b => b.onclick = () => {
+    document.documentElement.style.setProperty("--speed", b.dataset.speed);
+    document.querySelectorAll(".speed button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  });
+
+  newRun();
+  intro();
+  renderSteps();
+  refreshTrialBalance();
+})();
+</script>
+</body>
+</html>

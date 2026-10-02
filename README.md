@@ -9,8 +9,9 @@ Java 21 · Spring Boot 3.5 · PostgreSQL 17 · Flyway · Testcontainers · Prome
 ```bash
 make up     # Postgres + the service + Prometheus
 make demo   # walk one trade from funding through settlement and reconciliation
+            # ...or watch it animated: http://localhost:8080/demo
 make verify # ask the ledger to prove its own books add up
-make test   # 98 tests against a real Postgres
+make test   # 99 tests against a real Postgres
 ```
 
 ---
@@ -411,7 +412,7 @@ fails the run if the trial balance isn't zero afterwards.
 
 ## Testing
 
-98 tests, all against a **real PostgreSQL** via Testcontainers. Not H2: half of what this
+99 tests, all against a **real PostgreSQL** via Testcontainers. Not H2: half of what this
 project claims is enforced by Postgres features an in-memory substitute doesn't have —
 deferrable constraint triggers, `SET CONSTRAINTS ALL IMMEDIATE`, composite foreign keys,
 `ON CONFLICT` upserts, `jsonb`. Testing against a substitute would verify the substitute.
