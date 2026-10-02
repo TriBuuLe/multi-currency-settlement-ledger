@@ -52,6 +52,9 @@ public abstract class AbstractLedgerTest {
     private static final AtomicInteger SEQUENCE = new AtomicInteger();
     private static final AtomicLong TIMELINE = new AtomicLong();
 
+    /** Earlier than every window {@link #nextTimeline()} hands out, so no rate exists yet. */
+    protected static final Instant BEFORE_EVERY_TIMELINE = Instant.parse("1800-01-01T00:00:00Z");
+
     static {
         POSTGRES.start();
     }
@@ -75,18 +78,28 @@ public abstract class AbstractLedgerTest {
     }
 
     /**
-     * A fresh, far-future timeline for one test.
+     * A fresh timeline for one test, in the past and clear of every other test's.
      *
      * <p>Tests share one database and the rate table is append-only, so every test
      * publishing EUR/USD into the same window would see every other test's prices.
-     * Handing each test a window 400 days after the last one makes that impossible:
-     * rate resolution takes the newest observation at or before the asked-for instant,
-     * so an earlier test's rates are too old to win and a later test's are in the
-     * future. Deterministic, and no cleanup required.
+     * Rate resolution takes the newest observation at or before the asked-for instant,
+     * so each test gets a window 400 days <em>before</em> the last one: every rate an
+     * earlier test published is then in this test's future and cannot be seen.
+     *
+     * <p>The windows count down from 2020 rather than sitting in the future, because a
+     * correction replay asks what was known <em>now</em>, and a rate observed in a
+     * future window is not known yet. A few dozen tests reach back to the 1970s, well
+     * clear of {@link #BEFORE_EVERY_TIMELINE}.
+     *
+     * <p>Counting upward does not work. An earlier test's rate is older, but "older"
+     * only loses to a newer observation of the same pair; for a pair this test never
+     * publishes it is still the newest there is. That is how ExposureServiceTest's
+     * KWD/JPY quote once turned BitemporalRateTest's triangulated JPY/KWD into an
+     * inverse, but only when the classes happened to run in that order.
      */
     protected Instant nextTimeline() {
-        return Instant.parse("2000-01-01T00:00:00Z")
-                .plus(TIMELINE.incrementAndGet() * 400L, ChronoUnit.DAYS);
+        return Instant.parse("2020-01-01T00:00:00Z")
+                .minus(TIMELINE.incrementAndGet() * 400L, ChronoUnit.DAYS);
     }
 
     /** A customer id no other test will use. */

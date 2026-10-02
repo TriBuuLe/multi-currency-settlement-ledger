@@ -208,8 +208,9 @@ class FaultInjectionTest extends AbstractLedgerTest {
                     // Deliberately oversized: these are supposed to be rejected.
                     case 2 -> transfers.payout(from, "EUR", random.nextInt(40_000, 200_000),
                             newReference("chaos"), Instant.now(), UUID.randomUUID());
+                    // Priced inside this test's own timeline, so it uses the 1.08 above.
                     case 3 -> transfers.convert(from, "EUR", "USD", random.nextInt(1, 10_000),
-                            newReference("chaos"), Instant.now(), UUID.randomUUID());
+                            newReference("chaos"), t0.plusSeconds(60), UUID.randomUUID());
                     default -> {
                         var authorization = authorizations.authorize(
                                 new AuthorizationService.AuthorizeCommand(newReference("chaos"), from,

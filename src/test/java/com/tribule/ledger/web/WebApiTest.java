@@ -223,8 +223,8 @@ class WebApiTest extends AbstractLedgerTest {
     void missingRateIsUnprocessable() throws Exception {
         mvc.perform(get("/api/v1/fx/rates/resolve")
                         .param("from", "EUR").param("to", "USD")
-                        .param("effectiveAt", "1999-01-01T00:00:00Z")
-                        .param("knownAt", "1999-01-01T00:00:00Z"))
+                        .param("effectiveAt", BEFORE_EVERY_TIMELINE.toString())
+                        .param("knownAt", BEFORE_EVERY_TIMELINE.toString()))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.title").value("No usable FX rate"))
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("EUR/USD")));

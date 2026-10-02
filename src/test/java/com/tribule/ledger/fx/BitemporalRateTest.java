@@ -143,7 +143,7 @@ class BitemporalRateTest extends AbstractLedgerTest {
     void missingRateThrows() {
         // Before any rate in the database was effective, so direct, inverse, and
         // triangulated resolution all come up empty.
-        Instant beforeEverything = Instant.parse("1999-01-01T00:00:00Z");
+        Instant beforeEverything = BEFORE_EVERY_TIMELINE;
 
         assertThatThrownBy(() -> fx.resolve("EUR", "USD", beforeEverything, beforeEverything))
                 .isInstanceOf(FxException.RateNotAvailable.class)
